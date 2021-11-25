@@ -1,0 +1,86 @@
+---
+title: "final_project"
+author: "Teagan Norrgard, trn8cwf"
+date: "11/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE, include=FALSE, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+```
+
+```{r}
+boston <- read.csv("/Users/teagannorrgard/3001final_project/Boston_Airbnb_copy.csv")
+
+boston <- boston%>%
+  select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
+           "accommodates", "price", "cleaning_fee", "minimum_nights", "number_of_reviews",
+           "review_scores_rating","host_response_rate", "host_acceptance_rate", 
+           "host_is_superhost"))
+
+boston <-  boston%>%
+  rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed)
+
+
+## im trying to make the price and cleaning fee into numeric, 
+## so i need to drop $ , . from the string and drop the 00 from the end
+## im trying to replace $ , . with "" and then divide by 100? 
+## idk why none of these will work
+boston2 <- boston%>%
+  mutate(price=gsub('$',"NA", price))
+
+boston3 <- boston %>% 
+  mutate(price = str_replace_all(price, '$', ""))
+
+str_replace_all(boston['price'], '$', '')
+
+boston4 <- boston %>% 
+  mutate(price = str_replace(price, '$', ''))
+
+
+## but i think this is all the cleaning we need to do, maybe remove NA columns 
+## later if needed but it gets rid of a lot of rows (almost 50%)
+```
+
+
+these are all things we can do once price is numeric:
+```{r}
+## looking at neighborhoods
+table(boston$neighborhood)
+
+## table of median values of numeric/important columns
+## could be interesting to compare to means
+boston%>%
+  group_by(neighborhood)%>%
+  summarize(medianReview = median(review_scores_rating, na.rm=T), medianNumReviews = median(number_of_reviews, na.rm=T))
+        # medianPrice = median(price, na.rm=T), medianCleanFee = median(cleaning_fee, na.rm=T)
+
+## table of number of room type by neighborhood, keep in mind table of neighborhood counts
+boston%>%
+  group_by(neighborhood)%>%
+  select(room_type)%>%
+  table()
+
+## finding neighborhoods for top 100 most expensive
+## idk why this works now but price should be numeric first
+boston_top100 <- boston%>%
+  arrange(desc(price))
+
+head(boston_top100, 100)%>%
+  select(neighborhood)%>%
+  table()
+
+
+
+```
+
+
+
+
+
+
