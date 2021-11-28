@@ -14,9 +14,20 @@ library(dplyr)
 library(tidyverse)
 ```
 
+
+###First we read in our dataset.
+
+Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb
+The first thing we did was read in our data.
 ```{r}
 boston <- read.csv("/Users/teagannorrgard/3001final_project/Boston_Airbnb_copy.csv")
+head(boston, 5)
+```
 
+
+### Next we got to cleaning our data. 
+This included sub-setting columns we thought would make for interesting predictions, renaming columns so that they would be easier to call, and making 'price' and 'cleaning_fee' numeric variables.
+```{r}
 boston <- boston%>%
   select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
            "accommodates", "price", "cleaning_fee", "minimum_nights", "number_of_reviews",
@@ -26,56 +37,62 @@ boston <- boston%>%
 boston <-  boston%>%
   rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed)
 
-
-## im trying to make the price and cleaning fee into numeric, 
-## so i need to drop $ , . from the string and drop the 00 from the end
-## im trying to replace $ , . with "" and then divide by 100? 
-## idk why none of these will work
-boston2 <- boston%>%
-  mutate(price=gsub('$',"NA", price))
-
-boston3 <- boston %>% 
-  mutate(price = str_replace_all(price, '$', ""))
-
-str_replace_all(boston['price'], '$', '')
-
-boston4 <- boston %>% 
-  mutate(price = str_replace(price, '$', ''))
-
-
-## but i think this is all the cleaning we need to do, maybe remove NA columns 
-## later if needed but it gets rid of a lot of rows (almost 50%)
+boston$price = as.numeric(gsub("\\$", "", boston$price))
+boston$cleaning_fee = as.numeric(gsub("\\$", "", boston$cleaning_fee))
 ```
 
 
-these are all things we can do once price is numeric:
+### Then we made some basic exploration tables and visualizations.
 ```{r}
-## looking at neighborhoods
+## looking at neighborhood counts
+## we see here than the most popular neighborhoods are Jamaica Plain, South End, 
+## Back Bay, Fenway, Dorchester, and Allston.
 table(boston$neighborhood)
+```
 
+
+```{r}
 ## table of median values of numeric/important columns
 ## could be interesting to compare to means
-boston%>%
+bost_med_table <- boston%>%
   group_by(neighborhood)%>%
-  summarize(medianReview = median(review_scores_rating, na.rm=T), medianNumReviews = median(number_of_reviews, na.rm=T))
-        # medianPrice = median(price, na.rm=T), medianCleanFee = median(cleaning_fee, na.rm=T)
+  summarise(medianReview = median(review_scores_rating, na.rm=T), medianNumReviews = median(number_of_reviews, na.rm=T),
+            medianPrice = median(price, na.rm=T), medianCleanFee = median(cleaning_fee, na.rm=T))
 
+bost_med_table
+
+library(RColorBrewer)
+
+plot <- ggplot(data=bost_med_table, aes(x=neighborhood, y=medianPrice, fill=medianPrice))+
+  scale_fill_gradient(low = "dark red", high = "cornflowerblue")+
+  geom_bar(stat='identity')+
+  theme(axis.text.x = element_text(angle=90))+
+  labs(x="Neighborhood", y="Median Price of Airbnb per Night", title="Distribution of Airbnb prices per night over Neighborhoods in Boston")
+
+
+plot
+```
+
+
+```{r}
 ## table of number of room type by neighborhood, keep in mind table of neighborhood counts
 boston%>%
   group_by(neighborhood)%>%
   select(room_type)%>%
   table()
+```
 
-## finding neighborhoods for top 100 most expensive
-## idk why this works now but price should be numeric first
+
+```{r}
 boston_top100 <- boston%>%
   arrange(desc(price))
 
+## we see here that the top 100 most expensive places are pretty evenly distributed over neighborhoods,
+## Back Bay has the highest number with 17 but doesn't seem so high that it is an outlier.
+## this also makes sense because Back Bay was one of the most popular neighborhoods in the first place
 head(boston_top100, 100)%>%
   select(neighborhood)%>%
   table()
-
-
 
 ```
 
