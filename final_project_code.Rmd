@@ -12,6 +12,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r warning=FALSE, include=FALSE, echo=FALSE}
 library(dplyr)
 library(tidyverse)
+library(e1071)
+library(ggplot2)
+library(plotly)
+library(htmltools)
+library(devtools)
+library(NbClust)
 ```
 
 
@@ -32,7 +38,7 @@ boston <- boston%>%
   select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
            "accommodates", "price", "cleaning_fee", "minimum_nights", "number_of_reviews",
            "review_scores_rating","host_response_rate", "host_acceptance_rate", 
-           "host_is_superhost"))
+           "host_is_superhost", "amenities"))
 
 boston <-  boston%>%
   rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed)
@@ -43,16 +49,15 @@ boston$cleaning_fee = as.numeric(gsub("\\$", "", boston$cleaning_fee))
 
 
 ### Then we made some basic exploration tables and visualizations.
+
+Here we looked at neighborhood counts, and saw that the most popular neighborhoods are Jamaica Plain, South End, Back Bay, Fenway, Dorchester, and Allston.
 ```{r}
-## looking at neighborhood counts
-## we see here than the most popular neighborhoods are Jamaica Plain, South End, 
-## Back Bay, Fenway, Dorchester, and Allston.
 table(boston$neighborhood)
 ```
 
 
+Here we made a table of the median values the numeric columns compared by neighborhood
 ```{r}
-## table of median values of numeric/important columns
 ## could be interesting to compare to means
 bost_med_table <- boston%>%
   group_by(neighborhood)%>%
@@ -60,9 +65,11 @@ bost_med_table <- boston%>%
             medianPrice = median(price, na.rm=T), medianCleanFee = median(cleaning_fee, na.rm=T))
 
 bost_med_table
+```
 
-library(RColorBrewer)
 
+And made a bar graph comparing the median prices by neighborhood.
+```{r}
 plot <- ggplot(data=bost_med_table, aes(x=neighborhood, y=medianPrice, fill=medianPrice))+
   scale_fill_gradient(low = "dark red", high = "cornflowerblue")+
   geom_bar(stat='identity')+
@@ -74,8 +81,9 @@ plot
 ```
 
 
+We made a table of the number of room types by neighborhood.
+It is important here to keep in mind the table of neighborhood counts
 ```{r}
-## table of number of room type by neighborhood, keep in mind table of neighborhood counts
 boston%>%
   group_by(neighborhood)%>%
   select(room_type)%>%
@@ -83,6 +91,7 @@ boston%>%
 ```
 
 
+And we see here that the top 100 most expensive Airbnbs are pretty evenly distributed over the neighborhoods. Back Bay has the highest number with 17 but doesn't seem so high that it is an outlier. This also makes sense because Back Bay was one of the most popular neighborhoods in the first place
 ```{r}
 boston_top100 <- boston%>%
   arrange(desc(price))
@@ -95,6 +104,107 @@ head(boston_top100, 100)%>%
   table()
 
 ```
+
+
+price, review_scores_rating one more?? to predict neighborhoods
+
+is_host_superhost
+
+use text analysis to predict rating (amenities, summary, description, space)
+use clustering to predict neighborhood
+
+
+## Clustering
+
+First we picked which variables we thought would do the best at predicting neighborhoods.
+We chose to use price and rating.
+```{r}
+clust_boston <- boston[, c("price", "review_scores_rating")]
+```
+
+There are a few NAs in the price and rating columns, so we replaced them with the median
+```{r}
+## a better thing to do would be replace with the median according to its neighborhood, but idk how to do that
+sum(is.na(clust_boston$review_scores_rating))
+sum(is.na(clust_boston$price))
+
+clust_boston$review_scores_rating[is.na(clust_boston$review_scores_rating)] <- median(clust_boston$review_scores_rating, na.rm=T)
+clust_boston$price[is.na(clust_boston$price)] <- median(clust_boston$price, na.rm=T)
+
+sum(is.na(clust_boston$review_scores_rating))
+sum(is.na(clust_boston$price))
+
+```
+
+
+Then we used the elbow method to figure out how many clusters to choose.
+```{r}
+explained_variance = function(data_in, k){
+  set.seed(1)
+  kmeans_obj = kmeans(data_in, centers = k, algorithm = "Lloyd", iter.max = 30)
+  var_exp = kmeans_obj$betweenss / kmeans_obj$totss
+  var_exp  
+}
+
+
+
+explained_var_boston = sapply(1:10, explained_variance, data_in = clust_boston)
+explained_var_boston
+
+elbow_boston = data.frame(k = 1:10, explained_var_boston)
+ggplot(elbow_boston, 
+       aes(x = k,  
+           y = explained_var_boston)) + 
+  geom_point(size = 4) +
+  geom_line(size = 1) + 
+  xlab('k') + 
+  ylab('Inter-cluster Variance / Total Variance') + 
+  theme_light()
+```
+Based on this graph, it looks like 4 clusters will give us the best model without overfitting.
+
+
+Then we ran the clustering algorithm with 4 clusters
+```{r}
+set.seed(123)
+kmeans_obj_boston = kmeans(clust_boston, centers = 4, 
+                        algorithm = "Lloyd")
+
+clusters_boston = as.factor(kmeans_obj_boston$cluster)
+```
+
+
+And finally visualize the results
+```{r}
+
+## would this be  better if we manually grouped neighborhoods by location (factor collapse?)
+## and then there wouldnt be 25 different things to look at
+
+## also i will try to make a plotly graph later so that you can do the hover text
+
+neighborhood_clusters = as.factor(kmeans_obj_boston$cluster)
+
+ggplot(boston, aes(x = price, 
+                            y = review_scores_rating,
+                            color = neighborhood,
+                            shape = neighborhood_clusters)) + 
+  geom_point(size = 2) +
+  ggtitle("Price vs Rating of Boston Airbnbs") +
+  xlab("Price per Night") +
+  ylab("Review Score (out of 100)") +
+  scale_shape_manual(name = "Cluster", 
+                     labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4"),
+                     values = c("1", "2", "3", "4")) +
+  theme_light()
+```
+
+
+## Text Mining
+
+```{r}
+
+```
+
 
 
 
