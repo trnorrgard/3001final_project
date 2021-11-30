@@ -197,6 +197,7 @@ ggplot(boston, aes(x = price,
   theme_light()
 ```
 
+## if possible i  think it would be interesting to use the long/lat columns to put the clusters on a map, that would be easier to visualize than the colors for each neighborhood.
 
 ## Text Mining
 
