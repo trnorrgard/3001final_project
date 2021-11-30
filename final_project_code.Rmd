@@ -27,7 +27,6 @@ Our dataset was obtained from Kaggle but the data itself was sourced from Inside
 The first thing we did was read in our data.
 ```{r}
 boston <- read.csv("/Users/teagannorrgard/3001final_project/Boston_Airbnb_copy.csv")
-head(boston, 5)
 ```
 
 
