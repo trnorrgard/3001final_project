@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r warning=FALSE, include=FALSE, echo=FALSE}
+```{r, warning=FALSE, include=FALSE, echo=FALSE}
 library(dplyr)
 library(tidyverse)
 library(e1071)
@@ -21,7 +21,7 @@ library(NbClust)
 ```
 
 
-###First we read in our dataset.
+### First we read in our dataset.
 
 Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb
 The first thing we did was read in our data.
@@ -32,7 +32,7 @@ boston <- read.csv("/Users/teagannorrgard/3001final_project/Boston_Airbnb_copy.c
 
 ### Next we got to cleaning our data. 
 This included sub-setting columns we thought would make for interesting predictions, renaming columns so that they would be easier to call, and making 'price' and 'cleaning_fee' numeric variables.
-```{r}
+```{r, warning=FALSE}
 boston <- boston%>%
   select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
            "accommodates", "price", "cleaning_fee", "minimum_nights", "number_of_reviews",
@@ -105,14 +105,6 @@ head(boston_top100, 100)%>%
 ```
 
 
-price, review_scores_rating one more?? to predict neighborhoods
-
-is_host_superhost
-
-use text analysis to predict rating (amenities, summary, description, space)
-use clustering to predict neighborhood
-
-
 ## Clustering
 
 First we picked which variables we thought would do the best at predicting neighborhoods.
@@ -120,6 +112,7 @@ We chose to use price and rating.
 ```{r}
 clust_boston <- boston[, c("price", "review_scores_rating")]
 ```
+
 
 There are a few NAs in the price and rating columns, so we replaced them with the median
 ```{r}
@@ -132,6 +125,26 @@ clust_boston$price[is.na(clust_boston$price)] <- median(clust_boston$price, na.r
 
 sum(is.na(clust_boston$review_scores_rating))
 sum(is.na(clust_boston$price))
+
+```
+Then we sorted the neighborhoods into groups of neighborhoods that were close in proximity
+```{r}
+boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
+                                           Suburbs = c("Jamaica Plain", "Roslindale", 
+                                                       "Dorchester","Roxbury", 
+                                                       "West Roxbury", "Hyde Park", 
+                                                       "Mattapan"),
+                                           South_Boston = c("South Boston", 
+                                                         "South Boston Waterfront"),
+                                           Cambridge = c("Brighton", "Allston"),
+                                           East_Boston = c("Charlestown", "East Boston"),
+                                           Fenway = c("Fenway", "Mission Hill", 
+                                                      "Longwood Medical Area"),
+                                           Central_Boston = c("Bay Village", "Back Bay",
+                                                              "Beacon Hill", "West End",
+                                                              "North End", "Downtown",
+                                                              "South End", "Chinatown",
+                                                              "Leather District"))
 
 ```
 
@@ -162,11 +175,13 @@ ggplot(elbow_boston,
 ```
 Based on this graph, it looks like 4 clusters will give us the best model without overfitting.
 
+## i re-did this  with 6 clusters since i made 6 neighborhood groups, idk which one is better
+## yall can switch from 4 to 6 and see which one works better bc idk
 
-Then we ran the clustering algorithm with 4 clusters
-```{r}
+We ran the clustering algorithm with 6 clusters
+```{r, warning=FALSE}
 set.seed(123)
-kmeans_obj_boston = kmeans(clust_boston, centers = 4, 
+kmeans_obj_boston = kmeans(clust_boston, centers = 6, 
                         algorithm = "Lloyd")
 
 clusters_boston = as.factor(kmeans_obj_boston$cluster)
@@ -185,22 +200,63 @@ neighborhood_clusters = as.factor(kmeans_obj_boston$cluster)
 
 ggplot(boston, aes(x = price, 
                             y = review_scores_rating,
-                            color = neighborhood,
+                            color = neighborhood_groups,
                             shape = neighborhood_clusters)) + 
   geom_point(size = 2) +
   ggtitle("Price vs Rating of Boston Airbnbs") +
   xlab("Price per Night") +
   ylab("Review Score (out of 100)") +
   scale_shape_manual(name = "Cluster", 
-                     labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4"),
-                     values = c("1", "2", "3", "4")) +
+                     labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4", "Cluster 5", "Cluster 6"),
+                     values = c("1", "2", "3", "4", "5", "6")) +
   theme_light()
 ```
 
-## if possible i  think it would be interesting to use the long/lat columns to put the clusters on a map, that would be easier to visualize than the colors for each neighborhood.
+```{r, warning=FALSE, include=FALSE, echo=FALSE}
+library(lubridate)
+library(data.table)
+library(ggrepel)
+library(ggmap)
+```
+
+Appending cluster groups to boston dataset
+```{r}
+boston$clusters <- neighborhood_clusters
+```
+
+
+To make a map visualization, I needed to install packages with a special key
+```{r}
+if(!requireNamespace("devtools")) install.packages("devtools")
+devtools::install_github("dkahle/ggmap", ref = "tidyup", force=TRUE)
+
+library('ggmap')
+
+ggmap::register_google(key = 'AIzaSyBYxfE_HmtWRQ-YgKd4I7-QZ-fI0AzP4zQ')
+```
+
+
+I set the center coordinates as the center of Boston, and adjusted to fit the Airbnb locations
+```{r}
+p <- ggmap(get_googlemap(center = c(lon = -71.0759, lat = 42.3401),
+                    zoom = 13, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))+ 
+  geom_point(aes(x = longitude, y = latitude,  colour = clusters), data = boston, size = 0.5) + 
+  theme(legend.position="bottom")
+p
+```
+lol is this showing that it is predicting terribly
+theres no clear grouping of clusters, everything is mixed
+
 
 ## Text Mining
-
+ could we do text mining on the amenities column, 
+ find the words w the best value, 
+ one hot encode for including those words, 
+ predict price on whether certain amenities are offered ??? 
+ 
+ that all seems really complicated lol
 ```{r}
 
 ```
