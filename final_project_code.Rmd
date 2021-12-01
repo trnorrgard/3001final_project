@@ -21,12 +21,19 @@ library(NbClust)
 ```
 
 
+### use KNN to predict rating (threshold = 95?)
+
+based on these features, a renter should be able to predict if they will enjoy their stay at the property or not
+
+- ratings depending on price, room type, neighborhood, superhost, property_type, accomodates
+
+
 ### First we read in our dataset.
 
 Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb
 The first thing we did was read in our data.
 ```{r}
-boston <- read.csv("/Users/teagannorrgard/3001final_project/Boston_Airbnb_copy.csv")
+boston <- read.csv("~/Boston_Airbnb_copy.csv")
 ```
 
 
@@ -35,21 +42,21 @@ This included sub-setting columns we thought would make for interesting predicti
 ```{r, warning=FALSE}
 boston <- boston%>%
   select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
-           "accommodates", "price", "cleaning_fee", "minimum_nights", "number_of_reviews",
-           "review_scores_rating","host_response_rate", "host_acceptance_rate", 
-           "host_is_superhost", "amenities"))
+           "accommodates", "price", "review_scores_rating", 
+           "host_is_superhost", "property_type"))
 
 boston <-  boston%>%
   rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed)
 
 boston$price = as.numeric(gsub("\\$", "", boston$price))
-boston$cleaning_fee = as.numeric(gsub("\\$", "", boston$cleaning_fee))
 ```
 
 
 ### Then we made some basic exploration tables and visualizations.
 
 Here we looked at neighborhood counts, and saw that the most popular neighborhoods are Jamaica Plain, South End, Back Bay, Fenway, Dorchester, and Allston.
+
+We thought grouping by neighborhood would be an easy way to do some basic exploration
 ```{r}
 table(boston$neighborhood)
 ```
@@ -60,8 +67,8 @@ Here we made a table of the median values the numeric columns compared by neighb
 ## could be interesting to compare to means
 bost_med_table <- boston%>%
   group_by(neighborhood)%>%
-  summarise(medianReview = median(review_scores_rating, na.rm=T), medianNumReviews = median(number_of_reviews, na.rm=T),
-            medianPrice = median(price, na.rm=T), medianCleanFee = median(cleaning_fee, na.rm=T))
+  summarise(medianReview = median(review_scores_rating, na.rm=T),
+            medianPrice = median(price, na.rm=T))
 
 bost_med_table
 ```
@@ -103,6 +110,41 @@ head(boston_top100, 100)%>%
   table()
 
 ```
+
+
+```{r}
+
+boston_plot <- boston[c('price', 'review_scores_rating')]
+boston_plot <- boston_plot[complete.cases(boston_plot),]
+
+plot<- ggplot(boston_plot, aes(x=price, y=review_scores_rating))+
+  geom_point()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## Clustering
