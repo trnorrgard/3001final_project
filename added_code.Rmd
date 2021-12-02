@@ -1,0 +1,52 @@
+---
+title: "finalcode"
+author: "ash2sfp"
+date: "12/2/2021"
+output: html_document
+---
+
+```{r}
+# we need rating, price, room type, neighborhood, superhost, property_type, accomodates
+boston <- read_csv("Boston_Airbnb_copy.csv")
+boston <- boston%>%
+  select(c("neighbourhood_cleansed", "room_type", 
+           "accommodates", "price", "review_scores_rating", 
+           "host_is_superhost", "property_type"))
+
+boston <-  boston%>%
+  rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed, rating=review_scores_rating)
+
+boston$price = as.numeric(gsub("\\$", "", boston$price))
+
+boston <- boston[complete.cases(boston),] # removes NA's
+
+##Factor Collapse
+table(boston$neighborhood)
+boston$neighborhood <- fct_collapse(boston$neighborhood, 
+                                    north = c("East Boston", "Charlestown", "Allston", "Brighton", "Fenway", "Back Bay", "Beacon Hill", "West End", "North End", "Chinatown", "Longwood Medical Area", "Bay Village", "Downtown"), south = c("South End", "South Boston", "Mission Hill", "West Roxbury", "Leather District", "Dorchester", "Mattapan", "Hyde Park", "Jamaica Plain", "Roslindale", "Roxbury", "South Boston Waterfront"))
+table(boston$neighborhood)
+
+table(boston$room_type)
+boston$room_type <- as.factor(boston$room_type)
+
+table(boston$accommodates)
+
+table(boston$rating)
+boston$rating <- ifelse(boston$rating<95, "0", "1")
+boston$rating <- as.factor(boston$rating)
+
+boston$superhost <- as.factor(boston$superhost)
+boston$superhost <- recode(boston$superhost,
+                       'FALSE'="no",'TRUE'="yes") 
+
+table(boston$property_type)
+boston$property_type <- fct_collapse(boston$property_type, 
+                                     apartment= "Apartment",
+                                     other = c("Bed & Breakfast", "Boat", "Condominium", "Dorm", "Entire Floor", "Guesthouse", "House", "Loft", "Other", "Townhouse", "Villa"))
+
+scaled_boston <- as.data.frame(scale(boston[3:4], center = TRUE, scale = TRUE))
+
+boston <- boston[,-c(3,4)]
+boston <- cbind(scaled_boston, boston)
+```
+
