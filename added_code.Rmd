@@ -50,3 +50,53 @@ boston <- boston[,-c(3,4)]
 boston <- cbind(scaled_boston, boston)
 ```
 
+```{r}
+### creating train tune test
+library(caret)
+library(tidyverse)
+library(class)
+library(plotly)
+
+part_index_1 <- createDataPartition(boston$rating,
+                                           times=1,
+                                           p = 0.70,
+                                           groups=1,
+                                           list=FALSE)
+View(part_index_1)
+train <- boston[part_index_1,]
+tune_and_test <- boston[-part_index_1, ]
+
+tune_and_test_index <- createDataPartition(tune_and_test$rating,
+                                           p = .5,
+                                           list = FALSE,
+                                           times = 1)
+tune <- tune_and_test[tune_and_test_index, ]
+test <- tune_and_test[-tune_and_test_index, ]
+dim(train)
+dim(tune)
+dim(test)
+
+```
+
+```{r}
+### Running knn
+
+trctrl <- trainControl(method = "repeatedcv",
+                       number = 50,
+                       repeats = 10)
+
+boston_knn <- train(rating~.,
+                  data = train,
+                  method="knn",
+                  tuneLength=10,
+                  trControl= trctrl,
+                  preProcess="scale")
+
+boston_knn
+
+boston_pred <- predict(boston_knn, train)
+
+confusionMatrix(boston_pred, train$rating)
+
+```
+
