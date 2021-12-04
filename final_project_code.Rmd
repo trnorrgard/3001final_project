@@ -27,13 +27,15 @@ based on these features, a renter should be able to predict if they will enjoy t
 
 - ratings depending on price, room type, neighborhood, superhost, property_type, accomodates
 
+refactor property type
+
 
 ### First we read in our dataset.
 
 Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb
 The first thing we did was read in our data.
 ```{r}
-boston <- read.csv("~/Boston_Airbnb_copy.csv")
+boston <- read.csv("Boston_Airbnb_copy.csv")
 ```
 
 
@@ -112,15 +114,6 @@ head(boston_top100, 100)%>%
 ```
 
 
-```{r}
-
-boston_plot <- boston[c('price', 'review_scores_rating')]
-boston_plot <- boston_plot[complete.cases(boston_plot),]
-
-plot<- ggplot(boston_plot, aes(x=price, y=review_scores_rating))+
-  geom_point()
-```
-
 
 
 
@@ -149,10 +142,22 @@ plot<- ggplot(boston_plot, aes(x=price, y=review_scores_rating))+
 
 ## Clustering
 
+seeing if this makes a difference
+```{r}
+table(boston$room_type)
+boston$room_type <- fct_collapse(boston$room_type,
+                                  v1 = "Entire home/apt",
+                                  v2 = "Private room",
+                                  v3 = "Shared room")
+
+boston$room_type = as.numeric(gsub("v", "", boston$room_type))
+```
+
+
 First we picked which variables we thought would do the best at predicting neighborhoods.
 We chose to use price and rating.
 ```{r}
-clust_boston <- boston[, c("price", "review_scores_rating")]
+clust_boston <- boston[, c("price", "review_scores_rating", "room_type")]
 ```
 
 
@@ -168,8 +173,17 @@ clust_boston$price[is.na(clust_boston$price)] <- median(clust_boston$price, na.r
 sum(is.na(clust_boston$review_scores_rating))
 sum(is.na(clust_boston$price))
 
+## then normalize the data
+normalize <- function(x){
+ (x - min(x)) / (max(x) - min(x))
+}
+
+clust_boston[1:2] <- lapply(clust_boston[1:2], normalize)
+
 ```
+
 Then we sorted the neighborhoods into groups of neighborhoods that were close in proximity
+##### ignore this one
 ```{r}
 boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
                                            Suburbs = c("Jamaica Plain", "Roslindale", 
@@ -188,6 +202,23 @@ boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
                                                               "South End", "Chinatown",
                                                               "Leather District"))
 
+```
+
+## run this one
+```{r}
+boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
+                                           Outskirts = c("Jamaica Plain", "Roslindale", 
+                                                       "Dorchester","Roxbury", 
+                                                       "West Roxbury", "Hyde Park", 
+                                                       "Mattapan", "Brighton", "Allston"),
+                                           Central_Boston = c("Bay Village", "Back Bay",
+                                                              "Beacon Hill", "West End",
+                                                              "North End", "Downtown",
+                                                              "South End", "Chinatown",
+                                                              "Leather District", "Fenway", 
+                                                              "Mission Hill", "Longwood Medical Area", 
+                                                              "South Boston", "South Boston Waterfront", 
+                                                              "Charlestown", "East Boston"))
 ```
 
 
@@ -215,18 +246,28 @@ ggplot(elbow_boston,
   ylab('Inter-cluster Variance / Total Variance') + 
   theme_light()
 ```
-Based on this graph, it looks like 4 clusters will give us the best model without overfitting.
+Based on this graph, it looks like 2 clusters will give us the best model without over-fitting.
 
-## i re-did this  with 6 clusters since i made 6 neighborhood groups, idk which one is better
-## yall can switch from 4 to 6 and see which one works better bc idk
-
-We ran the clustering algorithm with 6 clusters
+So we ran the clustering algorithm with 2 clusters
 ```{r, warning=FALSE}
 set.seed(123)
-kmeans_obj_boston = kmeans(clust_boston, centers = 6, 
+kmeans_obj_boston = kmeans(clust_boston, centers = 2, 
                         algorithm = "Lloyd")
 
+kmeans_obj_boston
+
 clusters_boston = as.factor(kmeans_obj_boston$cluster)
+```
+
+```{r}
+num_boston = kmeans_obj_boston$betweenss
+
+# Total variance, "totss" is the sum of the distances
+# between all the points in the data set.
+denom_boston = kmeans_obj_boston$totss
+
+# Variance accounted for by clusters.
+(var_exp_boston = num_boston / denom_boston)
 ```
 
 
@@ -249,8 +290,8 @@ ggplot(boston, aes(x = price,
   xlab("Price per Night") +
   ylab("Review Score (out of 100)") +
   scale_shape_manual(name = "Cluster", 
-                     labels = c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4", "Cluster 5", "Cluster 6"),
-                     values = c("1", "2", "3", "4", "5", "6")) +
+                     labels = c("Cluster 1", "Cluster 2"),
+                     values = c("1", "2")) +
   theme_light()
 ```
 
@@ -273,7 +314,7 @@ if(!requireNamespace("devtools")) install.packages("devtools")
 devtools::install_github("dkahle/ggmap", ref = "tidyup", force=TRUE)
 
 library('ggmap')
-
+ 
 ggmap::register_google(key = 'AIzaSyBYxfE_HmtWRQ-YgKd4I7-QZ-fI0AzP4zQ')
 ```
 
@@ -290,6 +331,59 @@ p
 ```
 lol is this showing that it is predicting terribly
 theres no clear grouping of clusters, everything is mixed
+
+
+
+## confusion based on clusters
+```{r}
+clust_boston$neighborhood_groups <- boston$neighborhood_groups
+clust_boston$clusters <- neighborhood_clusters
+
+# change neighborhood group and cluster assignment to factors
+clust_boston[,c(4,5)] <- lapply(clust_boston[,c(4,5)], as.factor)
+```
+
+train, tune, test partitions, assign features
+```{r}
+train_index <- createDataPartition(clust_boston$neighborhood_groups,
+                                           p = .7,
+                                           list = FALSE,
+                                           times = 1)
+train <- clust_boston[train_index,]
+tune_and_test <- clust_boston[-train_index, ]
+
+
+tune_and_test_index <- createDataPartition(tune_and_test$neighborhood_groups,
+                                           p = .5,
+                                           list = FALSE,
+                                           times = 1)
+
+tune <- tune_and_test[tune_and_test_index, ]
+test <- tune_and_test[-tune_and_test_index, ]
+
+features <- as.data.frame(train[,-c(4)])
+target <- train$neighborhood_groups
+```
+
+```{r}
+set.seed(123)
+boston_dt <- train(x=features,
+                    y=target,
+                    method="rpart")
+ 
+boston_dt
+varImp(boston_dt)
+
+# Let's predict and see how we did. 
+dt_predict_1 = predict(boston_dt,tune,type= "raw")
+
+confusionMatrix(as.factor(dt_predict_1), 
+                as.factor(tune$neighborhood_groups), 
+                dnn=c("Prediction", "Actual"), 
+                mode = "sens_spec")
+```
+
+
 
 
 ## Text Mining
