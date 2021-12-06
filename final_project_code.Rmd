@@ -1,8 +1,13 @@
 ---
-title: "final_project"
-author: "Teagan Norrgard, trn8cwf"
-date: "11/24/2021"
-output: html_document
+title: "AIRBNB IN BOSTON"
+author: "Teagan Norrgard, Akhil Havaldar, Ronica Peraka"
+output:
+  html_document:
+    toc: TRUE
+    theme: cerulean
+    toc_float: TRUE
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -18,29 +23,29 @@ library(plotly)
 library(htmltools)
 library(devtools)
 library(NbClust)
+library(caret)
 ```
 
+### Our Question 
 
-### use KNN to predict rating (threshold = 95?)
+With our data, we wanted to examine the relationship between the price of Airbnb properties, and the neighborhood it is listed in. More specifically, we wanted to see if our model could predict a neighborhood based off of price, and a few other variables we chose later. We thought this would be an interesting dataset to explore with the growth of the tourism industry as vaccination rates rise and cities start to open up. Through our exploration and modeling, 
 
-based on these features, a renter should be able to predict if they will enjoy their stay at the property or not
+We also wanted a way to predict the rating of the Airbnb properties. We thought this would be a good addition to our project, since the deal one would get booking an Airbnb does not matter a lot if the experience is bad. We want to find a way to find a good deal with a high rating.
 
-- ratings depending on price, room type, neighborhood, superhost, property_type, accomodates
+Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb.
 
-refactor property type
+price was used 100% of the time, which is good since our main goal was to examine the relationship between price and neighborhood.
 
 
-### First we read in our dataset.
+### Cleaning our Data
 
-Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb
 The first thing we did was read in our data.
 ```{r}
 boston <- read.csv("Boston_Airbnb_copy.csv")
 ```
 
 
-### Next we got to cleaning our data. 
-This included sub-setting columns we thought would make for interesting predictions, renaming columns so that they would be easier to call, and making 'price' and 'cleaning_fee' numeric variables.
+Next we sub-setted columns we thought would make for interesting predictions, renamed columns so that they would be easier to call, and made 'price' and 'cleaning_fee' numeric variables.
 ```{r, warning=FALSE}
 boston <- boston%>%
   select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
@@ -54,7 +59,7 @@ boston$price = as.numeric(gsub("\\$", "", boston$price))
 ```
 
 
-### Then we made some basic exploration tables and visualizations.
+### Data Exploration{.tabset}
 
 Here we looked at neighborhood counts, and saw that the most popular neighborhoods are Jamaica Plain, South End, Back Bay, Fenway, Dorchester, and Allston.
 
@@ -64,7 +69,7 @@ table(boston$neighborhood)
 ```
 
 
-Here we made a table of the median values the numeric columns compared by neighborhood
+#### Median Values Grouped by Neighborhood
 ```{r}
 ## could be interesting to compare to means
 bost_med_table <- boston%>%
@@ -76,7 +81,7 @@ bost_med_table
 ```
 
 
-And made a bar graph comparing the median prices by neighborhood.
+#### Median Prices by Neighborhood
 ```{r}
 plot <- ggplot(data=bost_med_table, aes(x=neighborhood, y=medianPrice, fill=medianPrice))+
   scale_fill_gradient(low = "dark red", high = "cornflowerblue")+
@@ -89,8 +94,7 @@ plot
 ```
 
 
-We made a table of the number of room types by neighborhood.
-It is important here to keep in mind the table of neighborhood counts
+#### Room Type by Neighborhood
 ```{r}
 boston%>%
   group_by(neighborhood)%>%
@@ -99,14 +103,12 @@ boston%>%
 ```
 
 
-And we see here that the top 100 most expensive Airbnbs are pretty evenly distributed over the neighborhoods. Back Bay has the highest number with 17 but doesn't seem so high that it is an outlier. This also makes sense because Back Bay was one of the most popular neighborhoods in the first place
+#### Top 100 Most Expensive, by Neighborhood
+We see here that the top 100 most expensive Airbnbs are pretty evenly distributed over the neighborhoods. Back Bay has the highest number with 17 but doesn't seem so high that it is an outlier. This also makes sense because Back Bay was one of the most popular neighborhoods in the first place.
 ```{r}
 boston_top100 <- boston%>%
   arrange(desc(price))
 
-## we see here that the top 100 most expensive places are pretty evenly distributed over neighborhoods,
-## Back Bay has the highest number with 17 but doesn't seem so high that it is an outlier.
-## this also makes sense because Back Bay was one of the most popular neighborhoods in the first place
 head(boston_top100, 100)%>%
   select(neighborhood)%>%
   table()
@@ -114,66 +116,39 @@ head(boston_top100, 100)%>%
 ```
 
 
+### Clustering
 
+First we picked which variables we thought would do the best at predicting neighborhoods.
+We chose to use price and rating, and room type since that is where we saw the greatest variation by neighborhood in our exploration.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Clustering
-
-seeing if this makes a difference
 ```{r}
-table(boston$room_type)
-boston$room_type <- fct_collapse(boston$room_type,
+clust_boston <- boston[, c("price", "review_scores_rating", "room_type")]
+```
+
+Formatting room_type to be usable in clustering
+```{r, warning=FALSE}
+table(clust_boston$room_type)
+clust_boston$room_type <- fct_collapse(clust_boston$room_type,
                                   v1 = "Entire home/apt",
                                   v2 = "Private room",
                                   v3 = "Shared room")
 
-boston$room_type = as.numeric(gsub("v", "", boston$room_type))
-```
-
-
-First we picked which variables we thought would do the best at predicting neighborhoods.
-We chose to use price and rating.
-```{r}
-clust_boston <- boston[, c("price", "review_scores_rating", "room_type")]
+clust_boston$room_type = as.numeric(gsub("v", "", clust_boston$room_type))
 ```
 
 
 There are a few NAs in the price and rating columns, so we replaced them with the median
 ```{r}
-## a better thing to do would be replace with the median according to its neighborhood, but idk how to do that
-sum(is.na(clust_boston$review_scores_rating))
-sum(is.na(clust_boston$price))
-
 clust_boston$review_scores_rating[is.na(clust_boston$review_scores_rating)] <- median(clust_boston$review_scores_rating, na.rm=T)
 clust_boston$price[is.na(clust_boston$price)] <- median(clust_boston$price, na.rm=T)
 
 sum(is.na(clust_boston$review_scores_rating))
 sum(is.na(clust_boston$price))
+```
 
-## then normalize the data
+
+And then scaled our numeric variables
+```{r}
 normalize <- function(x){
  (x - min(x)) / (max(x) - min(x))
 }
@@ -182,32 +157,11 @@ clust_boston[1:2] <- lapply(clust_boston[1:2], normalize)
 
 ```
 
-Then we sorted the neighborhoods into groups of neighborhoods that were close in proximity
-##### ignore this one
+
+Then we sorted the neighborhoods into 2 groups, central Boston and Boston suburbs.
 ```{r}
 boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
                                            Suburbs = c("Jamaica Plain", "Roslindale", 
-                                                       "Dorchester","Roxbury", 
-                                                       "West Roxbury", "Hyde Park", 
-                                                       "Mattapan"),
-                                           South_Boston = c("South Boston", 
-                                                         "South Boston Waterfront"),
-                                           Cambridge = c("Brighton", "Allston"),
-                                           East_Boston = c("Charlestown", "East Boston"),
-                                           Fenway = c("Fenway", "Mission Hill", 
-                                                      "Longwood Medical Area"),
-                                           Central_Boston = c("Bay Village", "Back Bay",
-                                                              "Beacon Hill", "West End",
-                                                              "North End", "Downtown",
-                                                              "South End", "Chinatown",
-                                                              "Leather District"))
-
-```
-
-## run this one
-```{r}
-boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
-                                           Outskirts = c("Jamaica Plain", "Roslindale", 
                                                        "Dorchester","Roxbury", 
                                                        "West Roxbury", "Hyde Park", 
                                                        "Mattapan", "Brighton", "Allston"),
@@ -222,16 +176,17 @@ boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
 ```
 
 
-Then we used the elbow method to figure out how many clusters to choose.
-```{r}
+And we used the elbow method to figure out how many clusters to choose.
+
+Based on this graph, it looks like 2 clusters will give us the best model without over-fitting.
+This also makes sense because we collapsed the neighborhoods into 2 groups.
+```{r, warning=FALSE}
 explained_variance = function(data_in, k){
   set.seed(1)
   kmeans_obj = kmeans(data_in, centers = k, algorithm = "Lloyd", iter.max = 30)
   var_exp = kmeans_obj$betweenss / kmeans_obj$totss
   var_exp  
 }
-
-
 
 explained_var_boston = sapply(1:10, explained_variance, data_in = clust_boston)
 explained_var_boston
@@ -246,7 +201,7 @@ ggplot(elbow_boston,
   ylab('Inter-cluster Variance / Total Variance') + 
   theme_light()
 ```
-Based on this graph, it looks like 2 clusters will give us the best model without over-fitting.
+
 
 So we ran the clustering algorithm with 2 clusters
 ```{r, warning=FALSE}
@@ -259,26 +214,11 @@ kmeans_obj_boston
 clusters_boston = as.factor(kmeans_obj_boston$cluster)
 ```
 
-```{r}
-num_boston = kmeans_obj_boston$betweenss
 
-# Total variance, "totss" is the sum of the distances
-# between all the points in the data set.
-denom_boston = kmeans_obj_boston$totss
+### Visualizations{.tabset}
 
-# Variance accounted for by clusters.
-(var_exp_boston = num_boston / denom_boston)
-```
-
-
-And finally visualize the results
-```{r}
-
-## would this be  better if we manually grouped neighborhoods by location (factor collapse?)
-## and then there wouldnt be 25 different things to look at
-
-## also i will try to make a plotly graph later so that you can do the hover text
-
+#### Cluster Scatterplot
+```{r, warning=FALSE}
 neighborhood_clusters = as.factor(kmeans_obj_boston$cluster)
 
 ggplot(boston, aes(x = price, 
@@ -302,14 +242,14 @@ library(ggrepel)
 library(ggmap)
 ```
 
-Appending cluster groups to boston dataset
+#### Map of Airbnbs and Their Clusters
+
+We thought a map where you could see the physical location of the properties would be the best way to visualize our model, so we appended the clusters to our dataset and installed the required packages.
 ```{r}
 boston$clusters <- neighborhood_clusters
 ```
 
-
-To make a map visualization, I needed to install packages with a special key
-```{r}
+```{r, incluse=FALSE, warning=FALSE, echo=FALSE, message=FALSE}
 if(!requireNamespace("devtools")) install.packages("devtools")
 devtools::install_github("dkahle/ggmap", ref = "tidyup", force=TRUE)
 
@@ -318,32 +258,48 @@ library('ggmap')
 ggmap::register_google(key = 'AIzaSyBYxfE_HmtWRQ-YgKd4I7-QZ-fI0AzP4zQ')
 ```
 
-
-I set the center coordinates as the center of Boston, and adjusted to fit the Airbnb locations
-```{r}
-p <- ggmap(get_googlemap(center = c(lon = -71.0759, lat = 42.3401),
-                    zoom = 13, scale = 2,
+Since this map is not interactive, we adjusted the center of the map to fit all of the properties and zoomed as far as we could without Airbnbs  getting cut off. Here, of the 3585 observations, only 5 did not fit in the map.
+```{r, message=FALSE}
+map1 <- ggmap(get_googlemap(center = c(lon = -71.0759, lat = 42.319),
+                    zoom = 12, scale = 2,
                     maptype ='terrain',
                     color = 'color'))+ 
   geom_point(aes(x = longitude, y = latitude,  colour = clusters), data = boston, size = 0.5) + 
   theme(legend.position="bottom")
-p
+map1
 ```
-lol is this showing that it is predicting terribly
-theres no clear grouping of clusters, everything is mixed
+
+#### Zoomed Map
+
+We ran the map again, this time zooming in on central Boston to get a clearer look at it.
+Only 1747 properties are shown in this map, but we see here that our model is doing a pretty good job at predicting Airbnbs in Central Boston.
+```{r, message=FALSE}
+map_zoomed <- ggmap(get_googlemap(center = c(lon = -71.0759, lat = 42.35101),
+                    zoom = 14, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))+ 
+  geom_point(aes(x = longitude, y = latitude,  colour = clusters), data = boston, size = 0.5) + 
+  theme(legend.position="bottom")
+map_zoomed
+```
 
 
 
-## confusion based on clusters
+
+### Counfustion Matrix
+
+Next we wanted to get a confusion matrix based on clusters to check our accuracy.
+
+We started by making the neighborhood groups and cluster assignment factors
 ```{r}
 clust_boston$neighborhood_groups <- boston$neighborhood_groups
 clust_boston$clusters <- neighborhood_clusters
 
-# change neighborhood group and cluster assignment to factors
 clust_boston[,c(4,5)] <- lapply(clust_boston[,c(4,5)], as.factor)
 ```
 
-train, tune, test partitions, assign features
+
+And then partitioned into train, tune, test sets, and assigned our features/target
 ```{r}
 train_index <- createDataPartition(clust_boston$neighborhood_groups,
                                            p = .7,
@@ -365,16 +321,16 @@ features <- as.data.frame(train[,-c(4)])
 target <- train$neighborhood_groups
 ```
 
+
+And finally we ran the model to get our confusion matrix, and checked the variable importance.
 ```{r}
 set.seed(123)
 boston_dt <- train(x=features,
                     y=target,
                     method="rpart")
  
-boston_dt
 varImp(boston_dt)
 
-# Let's predict and see how we did. 
 dt_predict_1 = predict(boston_dt,tune,type= "raw")
 
 confusionMatrix(as.factor(dt_predict_1), 
@@ -384,18 +340,11 @@ confusionMatrix(as.factor(dt_predict_1),
 ```
 
 
+### Conclusions
 
-
-## Text Mining
- could we do text mining on the amenities column, 
- find the words w the best value, 
- one hot encode for including those words, 
- predict price on whether certain amenities are offered ??? 
- 
- that all seems really complicated lol
-```{r}
-
-```
+  Our accuracy is 72% which isn't the best, but we think our model did a good job predicting the neighborhood with the information it was given. We think that if we could have included more information that was in our original dataset, such as amenities, parking availability, and transit information, our model could have likely been more accurate, and we could have even split up our neighborhood groups more. (Maybe groups of downtown, central, suburbs). Unfortunately these variables were in sentence format written by the host, and were difficult to sort through and use in our clustering model.
+  
+  The variable importance output shows us that price was by far the most important variable for predicting neighborhood, which is the relationship we wanted to explore in the beginning. Using our map, we think our model is a valuable tool for finding Airbnbs that could be considered a good deal. Since price was used 100% of the time to predict our clusters, we can draw conclustions about the relative price of an Airbnb compared to the neighborhood it is in. Any Airbnb which was actually located in Central Boston but predicted as the Suburbs likely have a price much lower than other similar Airbnbs in Central Boston. The opposite is also true, where incorrectly classifies properties in the Suburbs are likely more expensive than others.
 
 
 
