@@ -1,0 +1,176 @@
+---
+title: "Will Consumers Enjoy their Airbnb Stay?"
+author: "Akhil Havaldar, Teagan Norrgard, Ronica Peraka"
+date: "12/8/2021"
+output: 
+  html_document:
+    toc: TRUE
+    theme: readable
+    toc_float: TRUE
+editor_options: 
+  chunk_output_type: console
+---
+
+### Question
+#### Based on airbnb data in Boston, we want to see whether certain factors (price, room type, neighborhood, whether the host is a superhost, property type, number of accomodates) can predict if a renter will enjoy their stay or not. Based on the distribution of reviews, we decided that most renters who enjoy their stay without complaints give a rating of 95+ (this will be used a the threshold for enjoying a stay). We decided on this question because a renter should be able to know if they will enjoy their stay before booking the property, otherwise it would be a waste of a trip. This should be something that is possible with the amount of information given for the listing, and the number of reviews each property receives. 
+
+### Exploratory Data Analysis
+#### After looking through the data set, we decided on which variable would be ideal to include in our model. We chose rating, price, room type, neighborhood, superhost status, property type, and accomodates. We believed that out of all the variables given in the data set, these variables would be best to predict the rating given to a property. These variables can be scaled if necessary, and also can be factored into sufficient categories. 
+
+```{r, warning=FALSE, include=FALSE}
+### Reading in the packages
+library(dplyr)
+library(tidyverse)
+library(e1071)
+library(ggplot2)
+library(plotly)
+library(htmltools)
+library(caret)
+library(class)
+library(devtools)
+library(NbClust)
+library(data.table)
+library(ROCR)
+library(mltools)
+library(MLmetrics)
+```
+
+```{r, include=FALSE}
+### Data cleaning
+boston <- read_csv("Boston_Airbnb_copy.csv")
+boston <- boston%>%
+  select(c("neighbourhood_cleansed", "room_type", 
+           "accommodates", "price", "review_scores_rating", 
+           "host_is_superhost", "property_type"))
+boston <-  boston%>%
+  rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed, rating=review_scores_rating)
+boston$price = as.numeric(gsub("\\$", "", boston$price))
+
+## Removing NA's
+boston <- boston[complete.cases(boston),]
+
+##Factor Collapsing each variable
+boston$neighborhood <- fct_collapse(boston$neighborhood, 
+                                    north = c("East Boston", "Charlestown", "Allston", "Brighton", "Fenway", "Back Bay", "Beacon Hill", "West End", "North End", "Chinatown", "Longwood Medical Area", "Bay Village", "Downtown"), south = c("South End", "South Boston", "Mission Hill", "West Roxbury", "Leather District", "Dorchester", "Mattapan", "Hyde Park", "Jamaica Plain", "Roslindale", "Roxbury", "South Boston Waterfront"))
+
+boston$room_type <- as.factor(boston$room_type)
+
+boston$rating <- ifelse(boston$rating<95, "0", "1")
+boston$rating <- as.factor(boston$rating)
+
+boston$superhost <- as.factor(boston$superhost)
+boston$superhost <- recode(boston$superhost,
+                       'FALSE'="no",'TRUE'="yes") 
+
+boston$property_type <- fct_collapse(boston$property_type, 
+                                     room = c("Dorm", "Loft"),
+                                     partial_home = c("Guesthouse", "Entire Floor"),
+                                     home = c("House", "Apartment", "Townhouse", "Villa", "Condominium"),
+                                     other = c("Bed & Breakfast", "Boat", "Other"))
+
+### Scaling the numeric values to match the scale
+scaled_boston <- as.data.frame(scale(boston[3:4], center = TRUE, scale = TRUE))
+boston <- boston[,-c(3,4)]
+
+### New combined data set
+boston <- cbind(scaled_boston, boston)
+```
+
+```{r, include=FALSE}
+### Creating train, tune, and test sets
+part_index_1 <- createDataPartition(boston$rating,
+                                           times=1,
+                                           p = 0.70,
+                                           groups=1,
+                                           list=FALSE)
+train <- boston[part_index_1,]
+tune_and_test <- boston[-part_index_1, ]
+tune_and_test_index <- createDataPartition(tune_and_test$rating,
+                                           p = .5,
+                                           list = FALSE,
+                                           times = 1)
+tune <- tune_and_test[tune_and_test_index, ]
+test <- tune_and_test[-tune_and_test_index, ]
+dim(train)
+dim(tune)
+dim(test)
+```
+
+### KNN Model
+#### After running the KNN model we can see that the model does not do a very good job in predicting whether or not a renter will enjoy their stay at an Airbnb in Boston. We get an accuracy of 62% which is not awful, but definietly not ideal, and should be a lot better if we are to think about implementing this model. We get a true positive rate of around 69% which is not too bad. This is saying that the actual positive class (renter enjoying their stay) will be correctly predicted 70% of the time. When put into context, if a renter could correctly predict whether or not they will enjoy their stay 70% of the time, we believe they would be happy with the result. The false positive rate on the other hand is around 50%, which is not good at all. With this percentage, a renter has a 50/50 chance of not enjoying their stay, when in fact the model predicts that they should be. As renters, we would want this percentage much lower if we were to think about renting out the place. We can also see this tradeoff in the ROC graph. When looking at variable importance, it seems that a person's superhost status dramatically influences the model, with every other vairble taking a low importance. This could be a driving factor as to why the model is not performing as well as we would have hoped, and we should look at removing this variable if we want more accurate predictions. Another metric we can look at is log loss. We get a value of -0.38, which is somewhat close to 0, so we can assume that our model has relatively low uncertainty. This can be seen as another positive attribute of the model. Finally, looking at our F1 score of 0.59 we can determine that the model could be a lot better as we are trying to get this F1 score as close to 1 as possible. The F1 interpreation being that our model has an even amount of both false positives and false negatives. 
+```{r, include=FALSE}
+### Running knn
+trctrl_1 <- trainControl(method = "repeatedcv",
+                       number = 10,
+                       repeats = 5)
+boston_knn_1 <- train(rating~.,
+                  data = train,
+                  method="knn",
+                  tuneLength=10,
+                  trControl= trctrl_1,
+                  preProcess="scale")
+
+trctrl_2 <- trainControl(method = "repeatedcv",
+                       number = 20,
+                       repeats = 10)
+boston_knn_2 <- train(rating~.,
+                  data = train,
+                  method="knn",
+                  tuneLength=10,
+                  trControl= trctrl_2,
+                  preProcess="scale")
+
+trctrl_3 <- trainControl(method = "repeatedcv",
+                       number = 50,
+                       repeats = 10)
+boston_knn_3 <- train(rating~.,
+                  data = train,
+                  method="knn",
+                  tuneLength=10,
+                  trControl= trctrl_3,
+                  preProcess="scale")
+```
+
+```{r, include=TRUE, echo=FALSE}
+### Evaluation with test set
+varImp(boston_knn_3)
+boston_knn_3
+
+boston_pred <- predict(boston_knn_3, test)
+confusionMatrix(boston_pred, test$rating)
+```
+
+#### ROC Curve
+```{r, echo=FALSE}
+### ROC
+boston_eval <- (predict(boston_knn_3, newdata= test))
+boston_eval_prob <- predict(boston_knn_3, newdata= test, type="prob")
+
+boston_eval <- tibble(pred_class=boston_eval, pred_prob=boston_eval_prob$`1`, target=as.numeric(test$rating))
+
+boston_pred <- prediction(boston_eval$pred_prob, boston_eval$target)
+boston_tree_perf <- performance(boston_pred, "tpr", "fpr")
+
+plot(boston_tree_perf, colorize=TRUE)
+
+```
+
+#### Log Loss
+```{r, echo=FALSE}
+### Log Loss
+LogLoss(as.numeric(boston_eval$pred_prob), as.numeric(test$rating))
+```
+
+#### F1 Score
+```{r, echo=FALSE}
+boston_pred_1 <- ifelse(boston_eval_prob$`1` < 0.5, 0, 1)
+
+boston_eval_prob$rating <- test$rating
+
+F1_Score(y_pred = boston_pred_1, y_true = boston_eval_prob$rating, positive = "1")
+```
+
+
+### ##################ADD CLUSTERING CODE AND EXPLANATIONS HERE###########
+
+
