@@ -420,14 +420,12 @@ boston_pred <- prediction(boston_eval$pred_prob, boston_eval$target)
 boston_tree_perf <- performance(boston_pred, "tpr", "fpr")
 
 plot(boston_tree_perf, colorize=TRUE)
-
 ```
 
 #### Log Loss
 ```{r, echo=FALSE}
 ### Log Loss : measures uncertainty of the probability predictions of the model
 LogLoss(as.numeric(boston_eval$pred_prob), as.numeric(test$rating))
-# -0.503
 ```
 
 #### F1 Score
@@ -438,7 +436,6 @@ boston_pred_1 <- ifelse(boston_eval_prob$`1` < 0.5, 0, 1)
 boston_eval_prob$rating <- test$rating
 
 F1_Score(y_pred = boston_pred_1, y_true = boston_eval_prob$rating, positive = "1")
-# 0.586
 ```
 
 ### KNN: Conclusions
