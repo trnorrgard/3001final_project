@@ -1,5 +1,5 @@
 ---
-title: "Will Consumers Enjoy their Airbnb Stay?"
+title: "Airbnb Questions"
 author: "Akhil Havaldar, Teagan Norrgard, Ronica Peraka"
 date: "12/8/2021"
 output: 
@@ -10,18 +10,16 @@ output:
 editor_options: 
   chunk_output_type: console
 ---
-
-### Question
-#### Based on airbnb data in Boston, we want to see whether certain factors (price, room type, neighborhood, whether the host is a superhost, property type, number of accomodates) can predict if a renter will enjoy their stay or not. Based on the distribution of reviews, we decided that most renters who enjoy their stay without complaints give a rating of 95+ (this will be used a the threshold for enjoying a stay). We decided on this question because a renter should be able to know if they will enjoy their stay before booking the property, otherwise it would be a waste of a trip. This should be something that is possible with the amount of information given for the listing, and the number of reviews each property receives. 
-
-### Exploratory Data Analysis
-#### After looking through the data set, we decided on which variable would be ideal to include in our model. We chose rating, price, room type, neighborhood, superhost status, property type, and accomodates. We believed that out of all the variables given in the data set, these variables would be best to predict the rating given to a property. These variables can be scaled if necessary, and also can be factored into sufficient categories. 
-
 ```{r, warning=FALSE, include=FALSE}
 ### Reading in the packages
 library(dplyr)
 library(tidyverse)
 library(e1071)
+library(magrittr)
+library(lubridate)
+library(data.table)
+library(ggrepel)
+library(ggmap)
 library(ggplot2)
 library(plotly)
 library(htmltools)
@@ -34,6 +32,264 @@ library(ROCR)
 library(mltools)
 library(MLmetrics)
 ```
+
+### Clusters: Question 
+
+With our data, we wanted to examine the relationship between the price of Airbnb properties, and the neighborhood it is listed in. More specifically, we wanted to see if our model could predict a neighborhood based off of price, and a few other variables we chose later. We thought this would be an interesting dataset to explore with the growth of the tourism industry as vaccination rates rise and cities start to open up. Through our exploration and modeling, we found the areas with highest median price and grouped by room type. 
+
+We also wanted a way to predict the rating of the Airbnb properties. We thought this would be a good addition to our project, since the deal one would get booking an Airbnb does not matter a lot if the experience is bad. We want to find a way to find a good deal with a high rating. We used kNN and evaluated with confusion matrix, logloss, F1, and ROC. 
+
+Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb.
+
+price was used 100% of the time, which is good since our main goal was to examine the relationship between price and neighborhood.
+
+
+```{r, include=FALSE}
+boston <- read.csv("Boston_Airbnb_copy.csv")
+```
+
+```{r, include=FALSE}
+boston <- boston%>%
+  select(c("name","neighbourhood_cleansed","latitude", "longitude", "room_type", 
+           "accommodates", "price", "review_scores_rating", 
+           "host_is_superhost", "property_type"))
+boston <-  boston%>%
+  rename(superhost = host_is_superhost, neighborhood = neighbourhood_cleansed)
+boston$price = as.numeric(gsub("\\$", "", boston$price))
+```
+
+### Clusters: Exploratory Data Analysis
+Here we looked at neighborhood counts, and saw that the most popular neighborhoods are Jamaica Plain, South End, Back Bay, Fenway, Dorchester, and Allston.
+```{r, echo=FALSE}
+table(boston$neighborhood)
+```
+
+#### Median Values Grouped by Neighborhood
+```{r, echo=FALSE}
+## could be interesting to compare to means
+bost_med_table <- boston%>%
+  group_by(neighborhood)%>%
+  summarise(medianReview = median(review_scores_rating, na.rm=T),
+            medianPrice = median(price, na.rm=T))
+bost_med_table
+```
+
+#### Median Prices by Neighborhood
+```{r, echo=FALSE}
+plot <- ggplot(data=bost_med_table, aes(x=neighborhood, y=medianPrice, fill=medianPrice))+
+  scale_fill_gradient(low = "dark red", high = "cornflowerblue")+
+  geom_bar(stat='identity')+
+  theme(axis.text.x = element_text(angle=90))+
+  labs(x="Neighborhood", y="Median Price of Airbnb per Night", title="Distribution of Airbnb prices per night over Neighborhoods in Boston")
+plot
+```
+
+#### Room Type by Neighborhood
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+boston%>%
+  group_by(neighborhood)%>%
+  select(room_type)%>%
+  table()
+```
+
+#### Top 100 Most Expensive, by Neighborhood
+We see here that the top 100 most expensive Airbnbs are pretty evenly distributed over the neighborhoods. Back Bay has the highest number with 17 but doesn't seem so high that it is an outlier. This also makes sense because Back Bay was one of the most popular neighborhoods in the first place.
+```{r, echo=FALSE}
+boston_top100 <- boston%>%
+  arrange(desc(price))
+head(boston_top100, 100)%>%
+  select(neighborhood)%>%
+  table()
+```
+
+### Clustering Model
+First we picked which variables we thought would do the best at predicting neighborhoods. We chose to use price and rating, and room type since that is where we saw the greatest variation by neighborhood in our exploration.
+```{r, include=FALSE}
+clust_boston <- boston[, c("price", "review_scores_rating", "room_type")]
+```
+
+```{r, include=FALSE, warning=FALSE}
+table(clust_boston$room_type)
+clust_boston$room_type <- fct_collapse(clust_boston$room_type,
+                                  v1 = "Entire home/apt",
+                                  v2 = "Private room",
+                                  v3 = "Shared room")
+clust_boston$room_type = as.numeric(gsub("v", "", clust_boston$room_type))
+```
+
+```{r, include=FALSE}
+clust_boston$review_scores_rating[is.na(clust_boston$review_scores_rating)] <- median(clust_boston$review_scores_rating, na.rm=T)
+clust_boston$price[is.na(clust_boston$price)] <- median(clust_boston$price, na.rm=T)
+sum(is.na(clust_boston$review_scores_rating))
+sum(is.na(clust_boston$price))
+```
+
+```{r, include=FALSE}
+normalize <- function(x){
+ (x - min(x)) / (max(x) - min(x))
+}
+clust_boston[1:2] <- lapply(clust_boston[1:2], normalize)
+```
+
+```{r, include=FALSE}
+# Then we sorted the neighborhoods into 2 groups, central Boston and Boston suburbs.
+
+boston$neighborhood_groups <- fct_collapse(boston$neighborhood,
+                                           Suburbs = c("Jamaica Plain", "Roslindale", 
+                                                       "Dorchester","Roxbury", 
+                                                       "West Roxbury", "Hyde Park", 
+                                                       "Mattapan", "Brighton", "Allston"),
+                                           Central_Boston = c("Bay Village", "Back Bay",
+                                                              "Beacon Hill", "West End",
+                                                              "North End", "Downtown",
+                                                              "South End", "Chinatown",
+                                                              "Leather District", "Fenway", 
+                                                              "Mission Hill", "Longwood Medical Area", 
+                                                              "South Boston", "South Boston Waterfront", 
+                                                              "Charlestown", "East Boston"))
+```
+
+#### Elbow Method
+Based on this graph, it looks like 2 clusters will give us the best model without over-fitting. This also makes sense because we collapsed the neighborhoods into 2 groups.
+
+```{r, warning=FALSE, echo=FALSE}
+explained_variance = function(data_in, k){
+  set.seed(1)
+  kmeans_obj = kmeans(data_in, centers = k, algorithm = "Lloyd", iter.max = 30)
+  var_exp = kmeans_obj$betweenss / kmeans_obj$totss
+  var_exp  
+}
+explained_var_boston = sapply(1:10, explained_variance, data_in = clust_boston)
+
+elbow_boston = data.frame(k = 1:10, explained_var_boston)
+ggplot(elbow_boston, 
+       aes(x = k,  
+           y = explained_var_boston)) + 
+  geom_point(size = 4) +
+  geom_line(size = 1) + 
+  xlab('k') + 
+  ylab('Inter-cluster Variance / Total Variance') + 
+  theme_light()
+```
+
+```{r, warning=FALSE, include=FALSE}
+set.seed(123)
+kmeans_obj_boston = kmeans(clust_boston, centers = 2, 
+                        algorithm = "Lloyd")
+kmeans_obj_boston
+clusters_boston = as.factor(kmeans_obj_boston$cluster)
+```
+
+### Clusters: Visualizations
+#### Scatterplot
+```{r, warning=FALSE, echo=FALSE}
+neighborhood_clusters = as.factor(kmeans_obj_boston$cluster)
+ggplot(boston, aes(x = price, 
+                            y = review_scores_rating,
+                            color = neighborhood_groups,
+                            shape = neighborhood_clusters)) + 
+  geom_point(size = 2) +
+  ggtitle("Price vs Rating of Boston Airbnbs") +
+  xlab("Price per Night") +
+  ylab("Review Score (out of 100)") +
+  scale_shape_manual(name = "Cluster", 
+                     labels = c("Cluster 1", "Cluster 2"),
+                     values = c("1", "2")) +
+  theme_light()
+```
+
+#### Map of Airbnbs and Their Clusters
+We thought a map where you could see the physical location of the properties would be the best way to visualize our model, so we appended the clusters to our dataset and installed the required packages.
+```{r, include=FALSE}
+boston$clusters <- neighborhood_clusters
+```
+
+```{r, include=FALSE, warning=FALSE, echo=FALSE, message=FALSE}
+if(!requireNamespace("devtools")) install.packages("devtools")
+devtools::install_github("dkahle/ggmap", ref = "tidyup", force=TRUE)
+library('ggmap')
+ 
+ggmap::register_google(key = 'AIzaSyBYxfE_HmtWRQ-YgKd4I7-QZ-fI0AzP4zQ')
+```
+
+Since this map is not interactive, we adjusted the center of the map to fit all of the properties and zoomed as far as we could without Airbnbs  getting cut off. Here, of the 3585 observations, only 5 did not fit in the map.
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+map1 <- ggmap(get_googlemap(center = c(lon = -71.0759, lat = 42.319),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))+ 
+  geom_point(aes(x = longitude, y = latitude,  colour = clusters), data = boston, size = 0.5) + 
+  theme(legend.position="bottom")
+map1
+```
+
+We ran the map again, this time zooming in on central Boston to get a clearer look at it. Only 1747 properties are shown in this map, but we see here that our model is doing a pretty good job at predicting Airbnbs in Central Boston.
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+map_zoomed <- ggmap(get_googlemap(center = c(lon = -71.0759, lat = 42.35101),
+                    zoom = 14, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))+ 
+  geom_point(aes(x = longitude, y = latitude,  colour = clusters), data = boston, size = 0.5) + 
+  theme(legend.position="bottom")
+map_zoomed
+```
+
+### Clusters: Counfusion Matrix
+
+```{r, include=FALSE}
+clust_boston$neighborhood_groups <- boston$neighborhood_groups
+clust_boston$clusters <- neighborhood_clusters
+clust_boston[,c(4,5)] <- lapply(clust_boston[,c(4,5)], as.factor)
+```
+
+```{r, include=FALSE}
+train_index <- createDataPartition(clust_boston$neighborhood_groups,
+                                           p = .7,   #the train set is 70% of the data
+                                           list = FALSE,
+                                           times = 1)
+train <- clust_boston[train_index,]
+tune_and_test <- clust_boston[-train_index, ]
+tune_and_test_index <- createDataPartition(tune_and_test$neighborhood_groups,
+                                           p = .5,     #the tune and test sets will each be 15%
+                                           list = FALSE,
+                                           times = 1)
+tune <- tune_and_test[tune_and_test_index, ]
+test <- tune_and_test[-tune_and_test_index, ]
+features <- as.data.frame(train[,-c(4)])
+target <- train$neighborhood_groups
+```
+
+```{r, include=FALSE}
+set.seed(123)
+boston_dt <- train(x=features,
+                    y=target,
+                    method="rpart")
+```
+
+#### Variable Importance
+```{r, echo=FALSE}
+varImp(boston_dt)
+```
+
+```{r, echo=FALSE}
+dt_predict_1 = predict(boston_dt,tune,type= "raw")
+confusionMatrix(as.factor(dt_predict_1), 
+                as.factor(tune$neighborhood_groups), 
+                dnn=c("Prediction", "Actual"), 
+                mode = "sens_spec")
+```
+
+### Clusters: Conclusions
+
+Our accuracy is 72% which isn't the best, but we think our model did a good job predicting the neighborhood with the information it was given. We think that if we could have included more information that was in our original dataset, such as amenities, parking availability, and transit information, our model could have likely been more accurate, and we could have even split up our neighborhood groups more. (Maybe groups of downtown, central, suburbs). Unfortunately these variables were in sentence format written by the host, and were difficult to sort through and use in our clustering model.
+
+The variable importance output shows us that price was by far the most important variable for predicting neighborhood, which is the relationship we wanted to explore in the beginning. Using our map, we think our model is a valuable tool for finding Airbnbs that could be considered a good deal. Since price was used 100% of the time to predict our clusters, we can draw conclustions about the relative price of an Airbnb compared to the neighborhood it is in. Any Airbnb which was actually located in Central Boston but predicted as the Suburbs likely have a price much lower than other similar Airbnbs in Central Boston. The opposite is also true, where incorrectly classifies properties in the Suburbs are likely more expensive than others.
+
+### KNN: Question
+Based on airbnb data in Boston, we want to see whether certain factors (price, room type, neighborhood, whether the host is a superhost, property type, number of accomodates) can predict if a renter will enjoy their stay or not. Based on the distribution of reviews, we decided that most renters who enjoy their stay without complaints give a rating of 95+ (this will be used a the threshold for enjoying a stay). We decided on this question because a renter should be able to know if they will enjoy their stay before booking the property, otherwise it would be a waste of a trip. This should be something that is possible with the amount of information given for the listing, and the number of reviews each property receives. 
+
+### KNN: Exploratory Data Analysis
+After looking through the data set, we decided on which variable would be ideal to include in our model. We chose rating, price, room type, neighborhood, superhost status, property type, and accomodates. We believed that out of all the variables given in the data set, these variables would be best to predict the rating given to a property. These variables can be scaled if necessary, and also can be factored into sufficient categories. 
 
 ```{r, include=FALSE}
 ### Data cleaning
@@ -97,7 +353,7 @@ dim(test)
 ```
 
 ### KNN Model
-#### After running the KNN model we can see that the model does not do a very good job in predicting whether or not a renter will enjoy their stay at an Airbnb in Boston. We get an accuracy of 62% which is not awful, but definietly not ideal, and should be a lot better if we are to think about implementing this model. We get a true positive rate of around 69% which is not too bad. This is saying that the actual positive class (renter enjoying their stay) will be correctly predicted 70% of the time. When put into context, if a renter could correctly predict whether or not they will enjoy their stay 70% of the time, we believe they would be happy with the result. The false positive rate on the other hand is around 50%, which is not good at all. With this percentage, a renter has a 50/50 chance of not enjoying their stay, when in fact the model predicts that they should be. As renters, we would want this percentage much lower if we were to think about renting out the place. We can also see this tradeoff in the ROC graph. When looking at variable importance, it seems that a person's superhost status dramatically influences the model, with every other vairble taking a low importance. This could be a driving factor as to why the model is not performing as well as we would have hoped, and we should look at removing this variable if we want more accurate predictions. Another metric we can look at is log loss. We get a value of -0.38, which is somewhat close to 0, so we can assume that our model has relatively low uncertainty. This can be seen as another positive attribute of the model. Finally, looking at our F1 score of 0.59 we can determine that the model could be a lot better as we are trying to get this F1 score as close to 1 as possible. The F1 interpreation being that our model has an even amount of both false positives and false negatives. 
+
 ```{r, include=FALSE}
 ### Running knn
 trctrl_1 <- trainControl(method = "repeatedcv",
@@ -131,11 +387,15 @@ boston_knn_3 <- train(rating~.,
                   preProcess="scale")
 ```
 
+#### Variable Importance
 ```{r, include=TRUE, echo=FALSE}
 ### Evaluation with test set
 varImp(boston_knn_3)
 boston_knn_3
+```
 
+
+```{r, include=TRUE, echo=FALSE}
 boston_pred <- predict(boston_knn_3, test)
 confusionMatrix(boston_pred, test$rating)
 ```
@@ -170,7 +430,16 @@ boston_eval_prob$rating <- test$rating
 F1_Score(y_pred = boston_pred_1, y_true = boston_eval_prob$rating, positive = "1")
 ```
 
+### KNN: Conclusions
 
-### ##################ADD CLUSTERING CODE AND EXPLANATIONS HERE###########
+After running the KNN model we can see that the model does not do a very good job in predicting whether or not a renter will enjoy their stay at an Airbnb in Boston. We get an accuracy of 62% which is not awful, but definitely not ideal, and should be a lot better if we are to think about implementing this model. 
+
+We get a true positive rate of around 69% which is not too bad. This is saying that the actual positive class (renter enjoying their stay) will be correctly predicted 70% of the time. When put into context, if a renter could correctly predict whether or not they will enjoy their stay 70% of the time, we believe they would be happy with the result. 
+
+The false positive rate on the other hand is around 50%, which is not good at all. With this percentage, a renter has a 50/50 chance of not enjoying their stay, when in fact the model predicts that they should be. As renters, we would want this percentage much lower if we were to think about renting out the place. 
+
+We can also see this tradeoff in the ROC graph. When looking at variable importance, it seems that a person's superhost status dramatically influences the model, with every other variable taking a low importance. This could be a driving factor as to why the model is not performing as well as we would have hoped, and we should look at removing this variable if we want more accurate predictions. 
+
+Another metric we can look at is log loss. We get a value of -0.38, which is somewhat close to 0, so we can assume that our model has relatively low uncertainty. This can be seen as another positive attribute of the model. Finally, looking at our F1 score of 0.59 we can determine that the model could be a lot better as we are trying to get this F1 score as close to 1 as possible. The F1 interpretation being that our model has an even amount of both false positives and false negatives. 
 
 
