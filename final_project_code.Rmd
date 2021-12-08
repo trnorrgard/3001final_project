@@ -28,9 +28,9 @@ library(caret)
 
 ### Our Question 
 
-With our data, we wanted to examine the relationship between the price of Airbnb properties, and the neighborhood it is listed in. More specifically, we wanted to see if our model could predict a neighborhood based off of price, and a few other variables we chose later. We thought this would be an interesting dataset to explore with the growth of the tourism industry as vaccination rates rise and cities start to open up. Through our exploration and modeling, 
+With our data, we wanted to examine the relationship between the price of Airbnb properties, and the neighborhood it is listed in. More specifically, we wanted to see if our model could predict a neighborhood based off of price, and a few other variables we chose later. We thought this would be an interesting dataset to explore with the growth of the tourism industry as vaccination rates rise and cities start to open up. Through our exploration and modeling, we found the areas with highest median price and grouped by room type. 
 
-We also wanted a way to predict the rating of the Airbnb properties. We thought this would be a good addition to our project, since the deal one would get booking an Airbnb does not matter a lot if the experience is bad. We want to find a way to find a good deal with a high rating.
+We also wanted a way to predict the rating of the Airbnb properties. We thought this would be a good addition to our project, since the deal one would get booking an Airbnb does not matter a lot if the experience is bad. We want to find a way to find a good deal with a high rating. We used kNN and evaluated with confusion matrix, logloss, F1, and ROC. 
 
 Our dataset was obtained from Kaggle but the data itself was sourced from Inside Airbnb.
 
@@ -302,7 +302,7 @@ clust_boston[,c(4,5)] <- lapply(clust_boston[,c(4,5)], as.factor)
 And then partitioned into train, tune, test sets, and assigned our features/target
 ```{r}
 train_index <- createDataPartition(clust_boston$neighborhood_groups,
-                                           p = .7,
+                                           p = .7,   #the train set is 70% of the data
                                            list = FALSE,
                                            times = 1)
 train <- clust_boston[train_index,]
@@ -310,7 +310,7 @@ tune_and_test <- clust_boston[-train_index, ]
 
 
 tune_and_test_index <- createDataPartition(tune_and_test$neighborhood_groups,
-                                           p = .5,
+                                           p = .5,     #the tune and test sets will each be 15%
                                            list = FALSE,
                                            times = 1)
 
@@ -343,7 +343,7 @@ confusionMatrix(as.factor(dt_predict_1),
 ### Conclusions
 
   Our accuracy is 72% which isn't the best, but we think our model did a good job predicting the neighborhood with the information it was given. We think that if we could have included more information that was in our original dataset, such as amenities, parking availability, and transit information, our model could have likely been more accurate, and we could have even split up our neighborhood groups more. (Maybe groups of downtown, central, suburbs). Unfortunately these variables were in sentence format written by the host, and were difficult to sort through and use in our clustering model.
-  
+
   The variable importance output shows us that price was by far the most important variable for predicting neighborhood, which is the relationship we wanted to explore in the beginning. Using our map, we think our model is a valuable tool for finding Airbnbs that could be considered a good deal. Since price was used 100% of the time to predict our clusters, we can draw conclustions about the relative price of an Airbnb compared to the neighborhood it is in. Any Airbnb which was actually located in Central Boston but predicted as the Suburbs likely have a price much lower than other similar Airbnbs in Central Boston. The opposite is also true, where incorrectly classifies properties in the Suburbs are likely more expensive than others.
 
 
